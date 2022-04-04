@@ -7,7 +7,7 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 
-import { AuthDto } from './dto';
+import { AuthDto, RefreshAuthDto } from './dto';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -17,6 +17,30 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  private async generateToken(
+    userId: string,
+    email: string,
+    expireInSecs?: number,
+  ): Promise<string> {
+    const payload = {
+      sub: userId,
+      email,
+    };
+
+    const secret =
+      this.configService.get('JWT_SECRET');
+
+    const token = await this.jwtService.signAsync(
+      payload,
+      {
+        expiresIn: expireInSecs || '15s',
+        secret,
+      },
+    );
+
+    return token;
+  }
 
   async signup(dto: AuthDto) {
     // generate the password hash
@@ -82,27 +106,39 @@ export class AuthService {
   async signToken(
     userId: string,
     email: string,
+    showRefreshToken = true,
   ): Promise<{
     access_token: string;
+    refresh_token: string;
   }> {
-    const payload = {
-      sub: userId,
+    const token = await this.generateToken(
+      userId,
       email,
-    };
-
-    const secret =
-      this.configService.get('JWT_SECRET');
-
-    const token = await this.jwtService.signAsync(
-      payload,
-      {
-        expiresIn: '15m',
-        secret,
-      },
+    );
+    const refresh = await this.generateToken(
+      userId,
+      email,
+      60 * 60 * 24 * 30,
     );
 
     return {
       access_token: token,
+      refresh_token: showRefreshToken
+        ? refresh
+        : undefined,
     };
+  }
+
+  async refresh(dto: RefreshAuthDto) {
+    const { sub, email } =
+      await this.jwtService.verifyAsync(
+        dto.refresh_token,
+        {
+          secret:
+            this.configService.get('JWT_SECRET'),
+        },
+      );
+
+    return this.signToken(sub, email, false);
   }
 }

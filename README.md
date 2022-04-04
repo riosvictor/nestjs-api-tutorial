@@ -110,8 +110,3 @@ nest g service user --no-spec
 > add bookmark controller and service
 nest g controller bookmark --no-spec
 nest g service bookmark --no-spec
-
-
-CONTINUE: 
-https://www.youtube.com/watch?v=GHTA143_b-s&t=262s
-2:12:15 - decorator
