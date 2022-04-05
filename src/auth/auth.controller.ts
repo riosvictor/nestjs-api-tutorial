@@ -26,7 +26,7 @@ export class AuthController {
   }
 
   @HttpCode(HttpStatus.OK)
-  @Post('/refresh')
+  @Post('refresh')
   public async refresh(
     @Body() body: RefreshAuthDto,
   ) {
