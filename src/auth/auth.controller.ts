@@ -15,16 +15,17 @@ export class AuthController {
   ) {}
 
   @Post('signup')
-  signup(@Body() dto: AuthDto) {
-    return this.authService.signup(dto);
+  signUp(@Body() dto: AuthDto) {
+    return this.authService.signUp(dto);
   }
 
   @HttpCode(HttpStatus.OK)
   @Post('signin')
-  signin(@Body() dto: AuthDto) {
-    return this.authService.signin(dto);
+  signIn(@Body() dto: AuthDto) {
+    return this.authService.signIn(dto);
   }
 
+  @HttpCode(HttpStatus.OK)
   @Post('/refresh')
   public async refresh(
     @Body() body: RefreshAuthDto,

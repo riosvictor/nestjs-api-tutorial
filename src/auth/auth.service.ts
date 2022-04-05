@@ -21,7 +21,7 @@ export class AuthService {
   private async generateToken(
     userId: string,
     email: string,
-    expireInSecs?: number,
+    expireInSecs = 15,
   ): Promise<string> {
     const payload = {
       sub: userId,
@@ -34,7 +34,7 @@ export class AuthService {
     const token = await this.jwtService.signAsync(
       payload,
       {
-        expiresIn: expireInSecs || '15s',
+        expiresIn: `${expireInSecs}s`,
         secret,
       },
     );
@@ -42,7 +42,80 @@ export class AuthService {
     return token;
   }
 
-  async signup(dto: AuthDto) {
+  private async generateRefreshToken(
+    userId: string,
+    email: string,
+    expireInSecs = 60,
+  ): Promise<string> {
+    const payload = {
+      sub: userId,
+      email,
+    };
+    const expiresIn = new Date();
+    expiresIn.setSeconds(
+      expiresIn.getSeconds() + expireInSecs,
+    );
+
+    const secret = this.configService.get(
+      'JWT_SECRET_REFRESH',
+    );
+
+    const token = await this.jwtService.signAsync(
+      payload,
+      {
+        expiresIn: `${expireInSecs}s`,
+        secret,
+      },
+    );
+
+    await this.prismaService.refreshToken.deleteMany(
+      {
+        where: {
+          userId,
+        },
+      },
+    );
+
+    await this.prismaService.refreshToken.create({
+      data: {
+        userId,
+        token,
+        expiresIn: expiresIn.getTime(),
+      },
+    });
+
+    return token;
+  }
+
+  private async signToken(
+    userId: string,
+    email: string,
+    showRefreshToken = true,
+  ): Promise<{
+    access_token: string;
+    refresh_token: string;
+  }> {
+    const token = await this.generateToken(
+      userId,
+      email,
+    );
+
+    let refresh: string;
+
+    if (showRefreshToken) {
+      refresh = await this.generateRefreshToken(
+        userId,
+        email,
+      );
+    }
+
+    return {
+      access_token: token,
+      refresh_token: refresh,
+    };
+  }
+
+  async signUp(dto: AuthDto) {
     // generate the password hash
     const hash = await argon.hash(dto.password);
     // save the new user in the db
@@ -71,7 +144,7 @@ export class AuthService {
     }
   }
 
-  async signin(dto: AuthDto) {
+  async signIn(dto: AuthDto) {
     // find the user by email
     const user =
       await this.prismaService.user.findUnique({
@@ -103,39 +176,40 @@ export class AuthService {
     return this.signToken(user.id, user.email);
   }
 
-  async signToken(
-    userId: string,
-    email: string,
-    showRefreshToken = true,
-  ): Promise<{
-    access_token: string;
-    refresh_token: string;
-  }> {
-    const token = await this.generateToken(
-      userId,
-      email,
-    );
-    const refresh = await this.generateToken(
-      userId,
-      email,
-      60 * 60 * 24 * 30,
-    );
-
-    return {
-      access_token: token,
-      refresh_token: showRefreshToken
-        ? refresh
-        : undefined,
-    };
-  }
-
   async refresh(dto: RefreshAuthDto) {
+    const foundedToken =
+      await this.prismaService.refreshToken.findUnique(
+        {
+          where: {
+            token: dto.refresh_token,
+          },
+        },
+      );
+
+    if (!foundedToken) {
+      throw new ForbiddenException(
+        'Invalid refresh token',
+      );
+    }
+
+    const user =
+      await this.prismaService.user.findUnique({
+        where: {
+          id: foundedToken.userId,
+        },
+      });
+
+    if (foundedToken.expiresIn < Date.now()) {
+      return this.signToken(user.id, user.email);
+    }
+
     const { sub, email } =
       await this.jwtService.verifyAsync(
         dto.refresh_token,
         {
-          secret:
-            this.configService.get('JWT_SECRET'),
+          secret: this.configService.get(
+            'JWT_SECRET_REFRESH',
+          ),
         },
       );
 
